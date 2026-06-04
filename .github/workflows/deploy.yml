@@ -1,0 +1,134 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend_portfolio/**'
+      - 'frontend_portfolio/**'
+      - '.github/workflows/**'
+
+jobs:
+  test-backend:
+    name: Run Backend Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test_portfolio
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend_portfolio/requirements.txt
+
+      - name: Run Backend Tests
+        env:
+          DATABASE_URL: postgres://test_user:test_password@localhost:5432/test_portfolio
+          SECRET_KEY: 'test-secret-key-for-ci-cd'
+          DEBUG: 'True'
+        run: |
+          cd backend_portfolio
+          python manage.py test
+
+      - name: Send Email on Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "CI/CD Pipeline Failed: Backend Tests"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: "GitHub Actions <noreply@github.com>"
+          body: |
+            Backend tests failed for commit ${{ github.sha }} on branch ${{ github.ref_name }}.
+            
+            View build details: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  deploy:
+    name: Deploy to EC2
+    needs: test-backend
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend_portfolio/package-lock.json
+
+      - name: Install Frontend Dependencies & Build
+        run: |
+          cd frontend_portfolio
+          npm ci
+          npm run build
+
+      - name: Configure SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Frontend Build
+        run: |
+          rsync -avz --delete frontend_portfolio/dist/ ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}:${{ secrets.DEPLOY_PATH_FRONTEND }}
+
+      - name: Deploy Backend Code
+        run: |
+          rsync -avz --exclude 'venv' --exclude 'db.sqlite3' --exclude '.env' --exclude '__pycache__' backend_portfolio/ ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}:${{ secrets.DEPLOY_PATH_BACKEND }}
+
+      - name: Run Post-Deploy Tasks
+        run: |
+          ssh ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} "
+            cd ${{ secrets.DEPLOY_PATH_BACKEND }} &&
+            source venv/bin/activate &&
+            pip install -r requirements.txt &&
+            python manage.py migrate --noinput &&
+            sudo systemctl restart gunicorn &&
+            sudo systemctl restart nginx
+          "
+
+      - name: Send Email on Deployment Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "CI/CD Pipeline Failed: Deployment"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: "GitHub Actions <noreply@github.com>"
+          body: |
+            Deployment to EC2 failed for commit ${{ github.sha }} on branch ${{ github.ref_name }}.
+            
+            View build details: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
