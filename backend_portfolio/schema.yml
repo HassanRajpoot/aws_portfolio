@@ -1,0 +1,446 @@
+openapi: 3.0.3
+info:
+  title: ''
+  version: 0.0.0
+paths:
+  /api/schema/:
+    get:
+      operationId: schema_retrieve
+      description: |-
+        OpenApi3 schema for this API. Format can be selected via content negotiation.
+
+        - YAML: application/vnd.oai.openapi
+        - JSON: application/vnd.oai.openapi+json
+      parameters:
+      - in: query
+        name: format
+        schema:
+          type: string
+          enum:
+          - json
+          - yaml
+      - in: query
+        name: lang
+        schema:
+          type: string
+          enum:
+          - af
+          - ar
+          - ar-dz
+          - ast
+          - az
+          - be
+          - bg
+          - bn
+          - br
+          - bs
+          - ca
+          - ckb
+          - cs
+          - cy
+          - da
+          - de
+          - dsb
+          - el
+          - en
+          - en-au
+          - en-gb
+          - eo
+          - es
+          - es-ar
+          - es-co
+          - es-mx
+          - es-ni
+          - es-ve
+          - et
+          - eu
+          - fa
+          - fi
+          - fr
+          - fy
+          - ga
+          - gd
+          - gl
+          - he
+          - hi
+          - hr
+          - hsb
+          - ht
+          - hu
+          - hy
+          - ia
+          - id
+          - ig
+          - io
+          - is
+          - it
+          - ja
+          - ka
+          - kab
+          - kk
+          - km
+          - kn
+          - ko
+          - ky
+          - lb
+          - lt
+          - lv
+          - mk
+          - ml
+          - mn
+          - mr
+          - ms
+          - my
+          - nb
+          - ne
+          - nl
+          - nn
+          - os
+          - pa
+          - pl
+          - pt
+          - pt-br
+          - ro
+          - ru
+          - sk
+          - sl
+          - sq
+          - sr
+          - sr-latn
+          - sv
+          - sw
+          - ta
+          - te
+          - tg
+          - th
+          - tk
+          - tr
+          - tt
+          - udm
+          - ug
+          - uk
+          - ur
+          - uz
+          - vi
+          - zh-hans
+          - zh-hant
+      tags:
+      - schema
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/vnd.oai.openapi:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/yaml:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/vnd.oai.openapi+json:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/audit-logs/:
+    get:
+      operationId: v1_audit_logs_retrieve
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+  /api/v1/audit-logs/export/:
+    get:
+      operationId: v1_audit_logs_export_retrieve
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+  /api/v1/auth/session/:
+    get:
+      operationId: v1_auth_session_retrieve
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+  /api/v1/auth/sign-in/:
+    post:
+      operationId: v1_auth_sign_in_create
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSignIn'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminSignIn'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminSignIn'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSignIn'
+          description: ''
+  /api/v1/auth/sign-out/:
+    post:
+      operationId: v1_auth_sign_out_create
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+  /api/v1/contact/:
+    post:
+      operationId: v1_contact_create
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/v1/projects/:
+    get:
+      operationId: v1_projects_retrieve
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: v1_projects_create
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+  /api/v1/projects/{id}/:
+    get:
+      operationId: v1_projects_retrieve_2
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: v1_projects_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+    delete:
+      operationId: v1_projects_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      responses:
+        '204':
+          description: No response body
+  /api/v1/resume/education/:
+    get:
+      operationId: v1_resume_education_retrieve
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/v1/resume/education/{id}/:
+    get:
+      operationId: v1_resume_education_retrieve_2
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: v1_resume_education_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+  /api/v1/resume/experience/:
+    get:
+      operationId: v1_resume_experience_retrieve
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/v1/resume/experience/{id}/:
+    get:
+      operationId: v1_resume_experience_retrieve_2
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: v1_resume_experience_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+  /api/v1/settings/:
+    get:
+      operationId: v1_settings_retrieve
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: v1_settings_partial_update
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+  /api/v1/skills/:
+    get:
+      operationId: v1_skills_retrieve
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/v1/skills/{id}/:
+    get:
+      operationId: v1_skills_retrieve_2
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: v1_skills_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+    delete:
+      operationId: v1_skills_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      responses:
+        '204':
+          description: No response body
+components:
+  schemas:
+    AdminSignIn:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          writeOnly: true
+      required:
+      - email
+      - password
