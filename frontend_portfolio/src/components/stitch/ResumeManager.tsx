@@ -277,7 +277,7 @@ export function ResumeManager() {
         sort_order: (skills?.length || 0) + 1,
       });
       toast.success(`Skill "${newSkillForm.name}" created.`);
-      setNewSkillForm({ name: "", score: 85, value_label: "EXPERT", sort_order: 1 });
+      setNewSkillForm({ name: "", score: 85, value_label: "EXPERT", icon: null, sort_order: 1 });
       setShowSkillForm(false);
     } catch {
       toast.error("Failed to add skill.");
