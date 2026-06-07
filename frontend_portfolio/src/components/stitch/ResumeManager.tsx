@@ -22,9 +22,7 @@ import {
 import {
   useSkills,
   useCreateSkill,
-  useUpdateSkill,
   useDeleteSkill,
-  BackendSkill,
 } from "@/hooks/useSkills";
 import { toast } from "sonner";
 import { usePublicSettings } from "@/hooks/useSettings";
@@ -53,7 +51,6 @@ export function ResumeManager() {
   const deleteEducation = useDeleteEducation();
 
   const createSkill = useCreateSkill();
-  const updateSkill = useUpdateSkill();
   const deleteSkill = useDeleteSkill();
 
   const createCertification = useCreateCertification();
@@ -97,6 +94,7 @@ export function ResumeManager() {
     name: "",
     score: 85,
     value_label: "EXPERT",
+    icon: null,
     sort_order: 1,
   });
 

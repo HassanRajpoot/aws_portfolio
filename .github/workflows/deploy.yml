@@ -196,11 +196,14 @@ jobs:
           EOF
           )
 
-          # Send the command via SSM
+          # Base64 encode the commands to bypass any AWS CLI parsing issues with quotes
+          B64_COMMANDS=$(echo "$COMMANDS" | base64 -w 0)
+
+          # Send the command via SSM using JSON syntax
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=[$COMMANDS]" \
+            --parameters '{"commands":["echo '"$B64_COMMANDS"' | base64 -d | sudo bash"]}' \
             --comment "Deploy portfolio-backend" \
             --query "Command.CommandId" \
             --output text)

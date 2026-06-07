@@ -14,7 +14,7 @@ import { apiClient } from "@/lib/apiClient";
 
 export function ProjectEditor() {
   const navigate = useNavigate();
-  const { data: projects, isLoading: loadingProjects } = useRawProjects();
+  const { data: projects } = useRawProjects();
 
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
