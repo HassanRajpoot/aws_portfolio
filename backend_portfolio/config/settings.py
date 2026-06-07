@@ -55,6 +55,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # WhiteNoise serves static files in production (no Nginx needed).
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     # CorsMiddleware must be placed before CommonMiddleware.
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -133,6 +135,7 @@ AUTH_USER_MODEL = "portfolio_auth.User"
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key type for models that don't define one explicitly.
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -143,6 +146,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Allow the Vite dev server and any production frontend origin.
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",
+    default="http://localhost:5173,http://127.0.0.1:5173",
+    cast=Csv(),
+)
+
+CSRF_TRUSTED_ORIGINS = config(
+    "CSRF_TRUSTED_ORIGINS",
     default="http://localhost:5173,http://127.0.0.1:5173",
     cast=Csv(),
 )
@@ -250,6 +259,10 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 # ---------------------------------------------------------------------------
 # Security hardening (active only when DEBUG=False)
 # ---------------------------------------------------------------------------
+# App Runner (and CloudFront) terminate TLS at the load-balancer.
+# This header tells Django the original request was HTTPS.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True

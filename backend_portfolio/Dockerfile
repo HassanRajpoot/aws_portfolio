@@ -50,6 +50,13 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy project files
 COPY . /app/
 
+# Collect Django admin static files at build time.
+# A dummy SECRET_KEY is required because Django refuses to start without one,
+# but the real key is injected via environment variables at runtime.
+RUN SECRET_KEY=build-placeholder python manage.py collectstatic --noinput
+
 EXPOSE 8000
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# Use Gunicorn for production (App Runner sends traffic to port 8000).
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--timeout", "120"]
+
