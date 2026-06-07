@@ -1,21 +1,21 @@
 # ==============================================================================
-# CI/CD Pipeline — App Runner + S3/CloudFront (OIDC Auth)
+# CI/CD Pipeline — EC2 SSM + S3/CloudFront (OIDC Auth)
 #
 # Architecture:
 #   Frontend: Vite build → S3 → CloudFront
-#   Backend:  Docker image → ECR → App Runner (auto-deploy)
-#   Auth:     GitHub OIDC (keyless — no stored AWS credentials)
+#   Backend:  Docker image → ECR → EC2 (deployed via AWS Systems Manager)
+#   Auth:     GitHub OIDC (keyless — no stored AWS credentials or SSH keys)
 #
 # Required GitHub Secrets:
 #   AWS_ROLE_ARN           - IAM Role ARN for OIDC authentication
 #
 # Required GitHub Variables:
-#   AWS_REGION             - e.g. eu-west-1
+#   AWS_REGION             - e.g. eu-north-1
 #   ECR_REPOSITORY         - e.g. portfolio-backend
 #   S3_BUCKET_NAME         - e.g. portfolio-frontend-123456789
 #   CLOUDFRONT_DISTRIBUTION_ID - e.g. E1234567890ABC
-#   APPRUNNER_SERVICE_ARN  - e.g. arn:aws:apprunner:eu-west-1:123456789:service/...
-#   VITE_API_URL           - e.g. https://xxxx.eu-west-1.awsapprunner.com/api/v1
+#   EC2_INSTANCE_ID        - e.g. i-0abcd1234efgh5678
+#   VITE_API_URL           - /api/v1 (relative path for CloudFront routing)
 # ==============================================================================
 
 name: CI/CD Pipeline
@@ -143,10 +143,10 @@ jobs:
           echo "✅ Image verified in ECR"
 
   # ============================================================================
-  # Job 3: Deploy Backend via App Runner
+  # Job 3: Deploy Backend to EC2 via AWS Systems Manager (SSM)
   # ============================================================================
   deploy-backend:
-    name: Deploy Backend (App Runner)
+    name: Deploy Backend (EC2 SSM)
     needs: build-and-push-ecr
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
@@ -158,160 +158,82 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Check App Runner service is in a deployable state
+      - name: Deploy via SSM Run Command
+        id: ssm
+        env:
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
         run: |
-          STATUS=$(aws apprunner describe-service \
-            --service-arn ${{ vars.APPRUNNER_SERVICE_ARN }} \
-            --query 'Service.Status' \
+          echo "🚀 Sending deployment command to EC2 instance $INSTANCE_ID..."
+          
+          # The script to run on the EC2 instance
+          # It logs into ECR, pulls the new image, stops the old container, and starts the new one.
+          COMMANDS=$(cat << 'EOF'
+          export AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          
+          # 1. Login to ECR
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+          
+          # 2. Pull the latest image
+          docker pull $ECR_REGISTRY/portfolio-backend:latest
+          
+          # 3. Stop and remove the old container
+          docker stop portfolio-backend || true
+          docker rm portfolio-backend || true
+          
+          # 4. Run the new container (uses .env file previously created on the instance)
+          docker run -d \
+            --name portfolio-backend \
+            --restart unless-stopped \
+            --env-file /home/ec2-user/portfolio/.env \
+            -p 8000:8000 \
+            $ECR_REGISTRY/portfolio-backend:latest
+            
+          # 5. Clean up old images
+          docker image prune -a -f --filter "until=24h"
+          EOF
+          )
+
+          # Send the command via SSM
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[$COMMANDS]" \
+            --comment "Deploy portfolio-backend" \
+            --query "Command.CommandId" \
             --output text)
 
-          echo "📋 Current App Runner status: $STATUS"
+          echo "Command ID: $COMMAND_ID"
+          echo "command_id=$COMMAND_ID" >> $GITHUB_OUTPUT
 
-          # App Runner can only accept a new deployment when RUNNING.
-          # If it's in OPERATION_IN_PROGRESS, a previous deploy is still going.
-          if [ "$STATUS" = "OPERATION_IN_PROGRESS" ]; then
-            echo "⏳ A deployment is already in progress. Waiting for it to finish..."
-            MAX_WAIT=300
-            ELAPSED=0
-            while [ $ELAPSED -lt $MAX_WAIT ]; do
-              sleep 15
-              ELAPSED=$((ELAPSED + 15))
-              STATUS=$(aws apprunner describe-service \
-                --service-arn ${{ vars.APPRUNNER_SERVICE_ARN }} \
-                --query 'Service.Status' \
-                --output text)
-              echo "  Status: $STATUS (${ELAPSED}s elapsed)"
-              if [ "$STATUS" = "RUNNING" ]; then
-                echo "✅ Previous deployment finished."
-                break
-              elif echo "$STATUS" | grep -qE "FAILED|DELETED"; then
-                echo "❌ Service is in a failed state: $STATUS"
-                exit 1
-              fi
-            done
-            if [ "$STATUS" != "RUNNING" ]; then
-              echo "❌ Timed out waiting for previous deployment to finish."
-              exit 1
-            fi
-          elif echo "$STATUS" | grep -qE "FAILED|DELETED"; then
-            echo "❌ Service is in a non-deployable state: $STATUS"
-            echo "   Manual intervention required in the AWS Console."
+      - name: Wait for SSM Command to finish
+        run: |
+          echo "⏳ Waiting for SSM deployment command to complete..."
+          aws ssm wait command-executed \
+            --command-id "${{ steps.ssm.outputs.command_id }}" \
+            --instance-id "${{ vars.EC2_INSTANCE_ID }}"
+            
+          # Check final status
+          STATUS=$(aws ssm list-command-invocations \
+            --command-id "${{ steps.ssm.outputs.command_id }}" \
+            --details \
+            --query "CommandInvocations[0].Status" \
+            --output text)
+            
+          if [ "$STATUS" = "Success" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed with status: $STATUS"
+            echo "--- Instance Logs ---"
+            aws ssm list-command-invocations \
+              --command-id "${{ steps.ssm.outputs.command_id }}" \
+              --details \
+              --query "CommandInvocations[0].CommandPlugins[0].Output" \
+              --output text
             exit 1
           fi
-
-      - name: Trigger App Runner deployment
-        id: trigger-deploy
-        run: |
-          echo "🚀 Triggering App Runner deployment..."
-          OPERATION_ID=$(aws apprunner start-deployment \
-            --service-arn ${{ vars.APPRUNNER_SERVICE_ARN }} \
-            --query 'OperationId' \
-            --output text 2>&1) || {
-            echo "❌ Failed to trigger deployment."
-            echo "   Error: $OPERATION_ID"
-            echo "   This can happen if the service is in a transitional state."
-            exit 1
-          }
-          echo "operation_id=$OPERATION_ID" >> $GITHUB_OUTPUT
-          echo "📝 Operation ID: $OPERATION_ID"
-
-      - name: Wait for deployment to complete
-        run: |
-          echo "⏳ Waiting for App Runner deployment to stabilize..."
-          MAX_WAIT=600  # 10 minutes (images with migrations can be slow)
-          ELAPSED=0
-          INTERVAL=15
-          LAST_STATUS=""
-
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            STATUS=$(aws apprunner describe-service \
-              --service-arn ${{ vars.APPRUNNER_SERVICE_ARN }} \
-              --query 'Service.Status' \
-              --output text)
-
-            # Only log when status changes to reduce noise
-            if [ "$STATUS" != "$LAST_STATUS" ]; then
-              echo "  Status: $STATUS (${ELAPSED}s elapsed)"
-              LAST_STATUS="$STATUS"
-            fi
-
-            if [ "$STATUS" = "RUNNING" ]; then
-              echo "✅ App Runner deployment successful!"
-              exit 0
-            fi
-
-            # Catch ALL App Runner failure states
-            if echo "$STATUS" | grep -qE "CREATE_FAILED|UPDATE_FAILED|DELETE_FAILED"; then
-              echo ""
-              echo "❌ Deployment FAILED with status: $STATUS"
-              echo ""
-              echo "--- Service Details ---"
-              aws apprunner describe-service \
-                --service-arn ${{ vars.APPRUNNER_SERVICE_ARN }} \
-                --query 'Service.{Status:Status,UpdatedAt:UpdatedAt,ServiceUrl:ServiceUrl}' \
-                --output table
-              echo ""
-              echo "💡 Common causes:"
-              echo "   - Container fails health check at /health/"
-              echo "   - Missing or invalid environment variables"
-              echo "   - Application crash on startup (check App Runner logs)"
-              echo ""
-              echo "🔗 Check logs: https://console.aws.amazon.com/apprunner"
-              exit 1
-            fi
-
-            sleep $INTERVAL
-            ELAPSED=$((ELAPSED + INTERVAL))
-          done
-
-          echo ""
-          echo "⏰ Timeout: deployment did not stabilize within ${MAX_WAIT}s"
-          echo "   Last status: $LAST_STATUS"
-          echo "   The deployment may still be in progress."
-          echo "   Check App Runner console for current status."
-          exit 1
-
-      - name: Verify backend health
-        run: |
-          # Get the service URL to hit the health endpoint
-          SERVICE_URL=$(aws apprunner describe-service \
-            --service-arn ${{ vars.APPRUNNER_SERVICE_ARN }} \
-            --query 'Service.ServiceUrl' \
-            --output text)
-
-          echo "🏥 Running health check against https://${SERVICE_URL}/health/ ..."
-
-          # Retry health check up to 5 times with 10s intervals.
-          # App Runner may report RUNNING before the container is fully ready.
-          MAX_RETRIES=5
-          RETRY=0
-          while [ $RETRY -lt $MAX_RETRIES ]; do
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              --max-time 10 \
-              "https://${SERVICE_URL}/health/" 2>/dev/null) || HTTP_STATUS="000"
-
-            echo "  Attempt $((RETRY + 1))/$MAX_RETRIES: HTTP $HTTP_STATUS"
-
-            if [ "$HTTP_STATUS" = "200" ]; then
-              echo "✅ Health check passed!"
-              exit 0
-            fi
-
-            RETRY=$((RETRY + 1))
-            if [ $RETRY -lt $MAX_RETRIES ]; then
-              echo "  Retrying in 10s..."
-              sleep 10
-            fi
-          done
-
-          echo ""
-          echo "❌ Health check FAILED after $MAX_RETRIES attempts"
-          echo "   URL: https://${SERVICE_URL}/health/"
-          echo "   Last HTTP status: $HTTP_STATUS"
-          echo ""
-          echo "💡 The container is running but the app may have crashed."
-          echo "   Check App Runner application logs for errors."
-          exit 1
 
   # ============================================================================
   # Job 4: Build & Deploy Frontend to S3 + Invalidate CloudFront
@@ -447,7 +369,7 @@ jobs:
             FAILED="${FAILED}• ECR Build & Push\n"
           fi
           if [ "${{ needs.deploy-backend.result }}" = "failure" ]; then
-            FAILED="${FAILED}• Backend Deployment (App Runner)\n"
+            FAILED="${FAILED}• Backend Deployment (EC2 SSM)\n"
           fi
           if [ "${{ needs.deploy-frontend.result }}" = "failure" ]; then
             FAILED="${FAILED}• Frontend Deployment (S3/CloudFront)\n"
