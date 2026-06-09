@@ -96,6 +96,10 @@ DATABASES = {
     )
 }
 
+# Force SSL for PostgreSQL connections (required for RDS)
+if DATABASES["default"]["ENGINE"] == "django.db.backends.postgresql":
+    DATABASES["default"]["OPTIONS"] = {"sslmode": "require"}
+
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
