@@ -96,8 +96,8 @@ DATABASES = {
     )
 }
 
-# Force SSL for PostgreSQL connections (required for RDS)
-if DATABASES["default"]["ENGINE"] == "django.db.backends.postgresql":
+# Force SSL for PostgreSQL connections in production (required for RDS)
+if not DEBUG and DATABASES["default"]["ENGINE"] == "django.db.backends.postgresql":
     DATABASES["default"]["OPTIONS"] = {"sslmode": "require"}
 
 
